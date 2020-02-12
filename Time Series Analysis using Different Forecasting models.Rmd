@@ -1,0 +1,153 @@
+---
+title: "R Notebook"
+output:
+  pdf_document: default
+  html_notebook: default
+---
+
+Load the required Libraries
+```{r}
+library(quantmod)
+library(tseries)
+library(timeSeries)
+library(forecast)
+library(xts)
+
+```
+Scrape the data for Tech Mahindra company from Yahoo Finance
+```{r}
+tech_stock_df <- getSymbols('TECHM.NS', from='2015-01-01', to='2018-05-01',auto.assign = FALSE)
+tech_stock_df <- na.omit(tech_stock_df)
+```
+Select the Closed price column and create its data frame
+```{r}
+tech_stock_closed_price_df <- tech_stock_df[,4]
+```
+Convert this data into time series format
+```{r}
+ts_stock_data <- ts(tech_stock_closed_price_df, start = c(2015,1),end = c(2018,5), frequency = 12 )
+
+plot(ts_stock_data)
+```
+
+divide data into training and test data set
+```{r}
+ts_stock_data_training = ts(tech_stock_closed_price_df, start=c(2015, 1), end=c(2017, 12), freq=12)
+plot(ts_stock_data_training)
+```
+Explonatory Data Analysis
+```{r}
+components.ts_stock_data_training = decompose(ts_stock_data_training)
+plot(components.ts_stock_data_training)
+```
+to achieve the stationarity perform Unit root test which finds out first difference or regression that should be used on trending data in order to make it stationary. 
+```{r}
+# install.packages("fUnitRoots")
+library(fUnitRoots)
+
+urkpssTest(ts_stock_data_training, type = c("tau"), lags = c("short"),use.lag = NULL, doplot = TRUE )
+
+ts_stock_data_stationary = diff(ts_stock_data_training, differences = 1)
+
+plot(ts_stock_data_stationary)
+
+```
+Now remove Seasonality from the data
+```{r}
+ts_stock_data_seasonally_adjusted <- ts_stock_data_training- components.ts_stock_data_training$seasonal
+ts_stock_data_stationary <- diff(ts_stock_data_seasonally_adjusted, differences=1)
+plot(ts_stock_data_stationary)
+```
+Model Estimation :
+
+ACF(Auto Correlation Function) and PACF (Partial autoCorrelation Function) help to understand the correlation component of different data points at different time lags. Thus it helps to determine the order in which we are going to create ARIMA model.
+
+To elaborate, we can say a given time series is a stationary one when its mean, variance and autocorrelation remains constant over time.
+```{r}
+acf(ts_stock_data_stationary, lag.max=34)
+pacf(ts_stock_data_stationary, lag.max=34)
+```
+using MA(1) that means p=0,q=1 and d=1
+build the model
+```{r}
+fit_model = Arima(ts_stock_data_training, order = c(0,1,1), include.drift = TRUE)
+summary(fit_model)
+```
+diagnosis measures
+```{r}
+confint(fit_model)
+# install.packages("plotly")
+library(ggfortify)
+# ggfortify::ggtsdiag()
+ggtsdiag(fit_model) +
+  theme(panel.background = element_rect(fill = "gray98"),
+        panel.grid.minor = element_blank(),
+        axis.line.y = element_line(colour="gray"),
+        axis.line.x = element_line(colour="gray"))
+
+
+ggplot(data=fit_model, aes(residuals(fit_model))) +
+  geom_histogram(aes(y =..density..),  
+                 binwidth = 5,
+                 col="turquoise4", fill="white") +
+  geom_density(col=1) +
+  theme(panel.background = element_rect(fill = "gray98"),
+        panel.grid.minor = element_blank(),
+        axis.line   = element_line(colour="gray"),
+        axis.line.x = element_line(colour="gray")) 
+```
+Create testing data set
+```{r}
+ts_stock_data_testing = ts(tech_stock_closed_price_df, start=c(2018, 1), freq=12)
+nrow(ts_stock_data_testing)
+```
+predict values for test data
+
+```{r}
+# library(TSPred)
+pred_val = forecast(fit_model, h=12, level=c(99.5))
+plot(pred_val)
+# plotarimapred(ts_stock_data_testing,fit.arima = pred_val, xlim = c(2018, 2019) )
+```
+```{r}
+# other forecasting methods
+
+fit_ets <- forecast(ets(ts_stock_data_training), h = 12)
+autoplot(fit_ets)
+
+```
+```{r}
+fit_meanf <- meanf(ts_stock_data_training, h = 12)
+autoplot(fit_meanf)
+```
+```{r}
+fit_naive <- naive(ts_stock_data_training, h = 12)
+autoplot(fit_naive)
+```
+```{r}
+fit_snaive <- snaive(ts_stock_data_training, h = 12) 
+autoplot(fit_snaive)
+```
+
+```{r}
+print("Arima Model Accuracy")
+round(accuracy(pred_val, ts_stock_data_testing),3)
+
+print("Exponential Smoothing Forecast Accuracy")
+round(accuracy(fit_ets, ts_stock_data_testing),3)
+
+print("Mean Forecast Accuracy")
+round(accuracy(fit_meanf, ts_stock_data_testing),3)
+
+print("Naive Forecast Accuracy")
+round(accuracy(fit_naive, ts_stock_data_testing),3)
+
+print("Seasonal Naive Forecasr Accuracy")
+round(accuracy(fit_snaive, ts_stock_data_testing),3)
+
+```
+
+
+
+
+
